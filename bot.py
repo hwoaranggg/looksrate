@@ -23,12 +23,12 @@ async def main() -> None:
         default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN),
     )
 
-    # In-memory sets для отслеживания оплаченных сессий
-    # (при рестарте бота сбрасываются — пользователь просто нажмёт /buy снова)
-    bot["pending_paid"] = set()
-    bot["pending_detailed"] = set()
-
-    dp = Dispatcher()
+    # В aiogram 3 данные хранятся в Dispatcher через workflow_data,
+    # они автоматически пробрасываются в хендлеры как kwargs
+    dp = Dispatcher(
+        pending_paid=set(),
+        pending_detailed=set(),
+    )
 
     # Роутеры — порядок важен: payment раньше analyze
     dp.include_router(start.router)
