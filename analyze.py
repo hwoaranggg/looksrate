@@ -1,6 +1,5 @@
 import sys
-from io import BytesIO
-from aiogram import Router, Bot
+from aiogram import Router, Bot, F
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, BufferedInputFile
 from db import get_user, increment_free
 from services.gpt import analyze_face
@@ -24,7 +23,7 @@ def buy_keyboard() -> InlineKeyboardMarkup:
     ])
 
 
-@router.message(lambda m: m.photo is not None)
+@router.message(F.photo)
 async def handle_photo(
     message: Message,
     bot: Bot,
