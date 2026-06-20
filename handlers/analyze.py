@@ -1,6 +1,5 @@
 import sys
-from io import BytesIO
-from aiogram import Router, Bot
+from aiogram import Router, Bot, F
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, BufferedInputFile
 from db import get_user, increment_free
 from services.gpt import analyze_face
@@ -24,20 +23,21 @@ def buy_keyboard() -> InlineKeyboardMarkup:
     ])
 
 
-@router.message(lambda m: m.photo is not None)
-async def handle_photo(message: Message, bot: Bot) -> None:
+@router.message(F.photo)
+async def handle_photo(
+    message: Message,
+    bot: Bot,
+    pending_paid: set,
+    pending_detailed: set,
+) -> None:
     user_id = message.from_user.id
     user_name = message.from_user.first_name or "Anonymous"
     user = await get_user(user_id)
 
     free_left = FREE_ANALYSES - user["free_used"]
-    pending_paid: set = bot["pending_paid"]
-    pending_detailed: set = bot["pending_detailed"]
-
     is_paid = user_id in pending_paid
     is_detailed = user_id in pending_detailed
 
-    # Проверяем доступ
     if not is_paid and not is_detailed and free_left <= 0:
         await message.answer(
             "🔒 *Бесплатные анализы закончились*\n\n"
@@ -48,20 +48,17 @@ async def handle_photo(message: Message, bot: Bot) -> None:
         )
         return
 
-    # Статус — два этапа чтобы пользователь не думал что бот завис
     status = await message.answer(
         "🔍 *Шаг 1/2* — анализирую черты лица...",
         parse_mode="Markdown",
     )
 
     try:
-        # Скачиваем фото максимального размера
         photo = message.photo[-1]
         file = await bot.get_file(photo.file_id)
         buf = await bot.download_file(file.file_path)
         image_data = buf.read()
 
-        # Первый + второй проход
         analysis, advice = await analyze_face(image_data, detailed=is_detailed)
 
         await status.edit_text(
@@ -71,7 +68,6 @@ async def handle_photo(message: Message, bot: Bot) -> None:
 
         msg1, msg2 = format_result(analysis, advice, user_name, detailed=is_detailed)
 
-        # Обновляем счётчики
         if is_paid:
             pending_paid.discard(user_id)
         elif is_detailed:
@@ -81,7 +77,7 @@ async def handle_photo(message: Message, bot: Bot) -> None:
 
         await status.delete()
 
-        # Генерируем карточку
+        # Карточка PNG
         try:
             card_bytes = generate_card(analysis, user_name)
             await message.answer_photo(
@@ -92,11 +88,9 @@ async def handle_photo(message: Message, bot: Bot) -> None:
         except Exception as card_err:
             print(f"[WARN] card generation failed: {card_err}", file=sys.stderr)
 
-        # Два отдельных сообщения — анализ и roadmap
         await message.answer(msg1, parse_mode="Markdown")
         await message.answer(msg2, parse_mode="Markdown")
 
-        # Если исчерпал бесплатные — предлагаем купить
         user_after = await get_user(user_id)
         if (
             not is_paid
